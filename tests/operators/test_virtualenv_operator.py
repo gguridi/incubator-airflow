@@ -201,7 +201,16 @@ class TestPythonVirtualenvOperator(unittest.TestCase):
             return None
         self._run_as_operator(f, op_args=[datetime.datetime.utcnow()])
 
-    def test_context(self):
+    def test_templates_context(self):
         def f(**kwargs):
             return kwargs['templates_dict']['ds']
         self._run_as_operator(f, templates_dict={'ds': '{{ ds }}'})
+
+    def test_task_context(self):
+        def f(**kwargs):
+            from datetime import datetime
+            assert kwargs['ds'] == datetime(2016, 1, 1).strftime('%Y-%m-%d')
+            assert kwargs['task_instance_key_str'] == 'test_dag__task__20160101'
+            assert 'var' not in kwargs
+            return kwargs['params']
+        self._run_as_operator(f, provide_context=True)

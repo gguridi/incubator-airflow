@@ -23,6 +23,7 @@ import pickle
 import subprocess
 import sys
 import types
+import builtins
 from textwrap import dedent
 
 import dill
@@ -100,13 +101,16 @@ class PythonOperator(BaseOperator):
         os.environ.update(airflow_context_vars)
 
         if self.provide_context:
-            context.update(self.op_kwargs)
-            context['templates_dict'] = self.templates_dict
-            self.op_kwargs = context
+            self.update_context(context)
 
         return_value = self.execute_callable()
         self.log.info("Done. Returned value was: %s", return_value)
         return return_value
+
+    def update_context(self, context):
+        context.update(self.op_kwargs)
+        context['templates_dict'] = self.templates_dict
+        self.op_kwargs = context
 
     def execute_callable(self):
         return self.python_callable(*self.op_args, **self.op_kwargs)
@@ -238,7 +242,6 @@ class PythonVirtualenvOperator(PythonOperator):
             op_kwargs=op_kwargs,
             templates_dict=templates_dict,
             templates_exts=templates_exts,
-            provide_context=False,
             *args,
             **kwargs)
         self.requirements = requirements or []
@@ -266,6 +269,17 @@ class PythonVirtualenvOperator(PythonOperator):
                                    "different Python major versions "
                                    "for PythonVirtualenvOperator. "
                                    "Please use string_args.")
+
+    def update_context(self, context):
+        context_to_provide = {}
+        for key, value in context.items():
+            is_module = inspect.ismodule(value)
+            is_builtin = value.__class__.__name__ in dir(builtins)
+            is_vars_wrappers = key == 'var'
+            if not is_module and not is_vars_wrappers and is_builtin:
+                context_to_provide[key] = value
+        context_to_provide.update(self.op_kwargs)
+        self.op_kwargs = context_to_provide
 
     def execute_callable(self):
         with TemporaryDirectory(prefix='venv') as tmp_dir:
